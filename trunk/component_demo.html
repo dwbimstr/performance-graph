@@ -24,8 +24,14 @@
   font-weight: bold;
 }
 
+
 .nodeText {
   font: 8px sans-serif;
+}
+
+.f1Text {
+  fill: orange;
+  font-weight: bold;
 }
 
 .link {
@@ -41,6 +47,7 @@
 <div>move the node,then click
 <button onclick="return refresh2();">refresh data</button>
 </div>
+
 
 <script src="http://d3js.org/d3.v3.min.js"></script>
 
@@ -65,9 +72,9 @@ function graph(d3){
 
 //step 1, custom the config
 this.config={
-	bg_size:{width:1000,height:1000},	
+	bg_size:{width:800,height:600},	
 	edge_def_width:5,
-	edge_show_arraow:true,
+	edge_show_arrow:true,
 	node_draggable:true,
 	show_performance_bar:true,	
 }
@@ -79,6 +86,7 @@ var cluster = d3.layout.cluster().size([this.config.bg_size.height, this.config.
 /// step 2, custom the actions
 var showTitleAction;
 var showSubheadAction;
+var showPathDesc;
 
 this.showTitle=function(f){
 	showTitleAction=f;	
@@ -88,6 +96,9 @@ this.showSubhead=function(f){
 	showSubheadAction=f;
 }
 
+this.showPathDesc=function(f){
+	showPathDesc=f;
+}
 
 
 /// final step , bind some data
@@ -183,11 +194,11 @@ this.redraw=function(){
 	var _clear=function(){
 		d3.select("svg").remove();
 		
-		svg = d3.select("body").append("svg")
-									.attr("width", width)
-									.attr("height", height)
-									  .append("g")
-										.attr("transform", "translate(80,0)");
+		svg = d3.select("body").append("svg")									
+			.attr("width", width)
+			.attr("height", height)
+			  .append("g")
+				.attr("transform", "translate(80,0)");
 										
 		svg.append("svg:defs").selectAll("marker")
 			.data(["suit"])
@@ -208,7 +219,8 @@ this.redraw=function(){
 		
 		var linksWithArrow=self.links;
 		
-		if(self.config.edge_show_arraow){
+		//to show arrow at the end of the path with fixed size, we have to copy each path with .stroke-width=1 
+		if(self.config.edge_show_arrow){
 			linksWithArrow=[];
 			self.links.forEach(function(d){
 				
@@ -218,7 +230,7 @@ this.redraw=function(){
 					fake[prop]=d[prop];
 				}
 				
-				fake.faked=true;
+				fake.faked=true;//copy each path with .faked=true as flag
 				
 				linksWithArrow.push(fake);
 				linksWithArrow.push(d);
@@ -231,6 +243,9 @@ this.redraw=function(){
 			.enter().insert("path",":first-child")			
 			.attr("marker-end",function(d){
 				if(d.faked) return "url(#idArrow)";
+			})
+			.attr("id",function(d){
+				if(!d.faked) return "link"+d.ref.from+"-"+d.ref.to;
 			})
 			.attr("class", function(d){
 				return "link"+" link-"+d.ref.from+" link-"+d.ref.to;
@@ -245,6 +260,9 @@ this.redraw=function(){
 				else
 					return self.config.edge_def_width;//default value
 		})
+		
+
+		
 
 	}
 
@@ -256,7 +274,17 @@ this.redraw=function(){
     
 	_redrawEdges();
 	
-    var existingNodes = svg.selectAll(".node").data(nodes);//选中所有节点
+	///show description on each path(edge)
+	if(showPathDesc){
+		svg.selectAll(".abc").data(self.links).enter().append("text").append("textPath")			
+			.attr("xlink:xlink:href",function(d){return "#link"+d.ref.from+"-"+d.ref.to;})//why not .attr("xlink:href",...)? this's a hack, see https://groups.google.com/forum/?fromgroups=#!topic/d3-js/vLgbiM4ki1g			
+			.attr("startOffset", "50%")
+			.text(showPathDesc)
+	}
+    
+	///show each node with text
+	
+	var existingNodes = svg.selectAll(".node").data(nodes);//选中所有节点
     
 	//矩形    
 	var newNodes = existingNodes.enter().append("g");	
@@ -290,7 +318,7 @@ this.redraw=function(){
 			
 			
 			//拖动时重绘边			
-			//update node's coord ,then redraw edges
+			//update node's coord ,then redraw all edges
 			d.x=d.x+d3.event.dy;
 			d.y=d.y+d3.event.dx;
 			_redrawEdges();
@@ -570,6 +598,13 @@ function refresh(){
 		return d.name;
 	});
 	
+	myGraph.showSubhead(function(d){
+		return "p0";
+	});
+	
+	myGraph.showPathDesc(function(d){
+		return d.ref.edge_width.toFixed(2);
+	});	
 	
 	myGraph.bind(data);
 	
@@ -670,7 +705,7 @@ function refresh2(){
 		load:Math.random(),
 		confusionmatrix: [[7293, 1224],[7293, 1224]],
 	},
-	"8":{
+	"8":{// change 6 to 8
 		id:8,
 		name:"systemI",
 		load:Math.random(),
