@@ -80,7 +80,7 @@ this.config={
 }
 
 var self=this;
-var cluster = d3.layout.cluster().size([this.config.bg_size.height, this.config.bg_size.width - 160]);
+var cluster = d3.layout.cluster().size([self.config.bg_size.height, self.config.bg_size.width - 160]);
 
 
 /// step 2, custom the actions
@@ -103,17 +103,15 @@ this.showPathDesc=function(f){
 
 /// final step , bind some data
 
-this.data={};
-
 this.bind=function(data){
 
 	/**
 	忽略连通图中的回路，产生一棵树。
 	这棵树符合cluster.nodes(tree)的调用要求（参见：https://github.com/mbostock/d3/wiki/Cluster-Layout）	
 	*/
-	var conv2tree=function(){
+	var conv2tree=function(data){
 		var targetHasParent={};
-		self.traverseEdge(function(source,target){
+		self.traverseEdge(data,function(source,target){
 			if(!targetHasParent[target.id]){
 				if(!source.children){
 					source.children=[];
@@ -122,53 +120,62 @@ this.bind=function(data){
 				targetHasParent[target.id]=true;
 			}
 		});
-		return self.getRoot();
+		return self.getRoot(data);
 	}
 
 
 	/**
-		通过cluster.nodes(tree)，为tree的每个节点计算x，y，depth等属性以便定位
-		传入oldData以保留拖动后的位置信息
+		通过cluster.nodes(tree)，为tree的每个节点计算x，y，depth等属性以便定位		
 	*/
 	var buildNodes=function(tree,oldData){
-		var result = cluster.nodes(tree);
-		if(oldData){
-			result.forEach(function(d){
-				if(oldData[d.id]){
-					d.x=oldData[d.id].x;
-					d.y=oldData[d.id].y;
-				}
-			});
-		}	
-		return result;
+		return cluster.nodes(tree);
 	}
 
 	/**
 	建立节点之间各条边。
 	如果直接调用cluster.links(nodes)，其只支持树状结构，回路会被丢弃，借此把所有边补充完整。
 	*/
-	var buildLinks=function(){	
+	var buildLinks=function(data){	
 		var result=[];
-		self.traverseEdge(function(source,target,ref){
+		self.traverseEdge(data,function(source,target,ref){
 			result.push({'source':source,'target':target,'ref':ref});
 		});	
 		return result;
 	}
 
-
-	var oldData=this.data;
-	this.data=data;	
+	var merge=function(nodes,links){
+		
+		var oldData=self.nodes;
+		if(oldData){
+			nodes.forEach(function(d){
+				if(oldData[d.id]){
+					d.x=oldData[d.id].x;
+					d.y=oldData[d.id].y;
+				}
+			});
+		}
+		
+		
+		self.nodes=nodes;
+		self.links=links;
+		
+	}
+	
 	//1)连通图->树 参见：https://github.com/mbostock/d3/wiki/Cluster-Layout)	
 	//1)temporarily convert a connectivity to a tree	
-	var tree = conv2tree();
+	var tree = conv2tree(data);
 	//2)根据树状结构计算节点位置.若传入oldData则保留拖动后的位置信息
 	//2)caculate for nodes' coords with <code>cluster.nodes(tree);</code>
-	this.nodes = buildNodes(tree,oldData); 
+	var nodes = buildNodes(tree); 
 	//3)因为连通图是网状而非树状，将所有边补充完整
 	//3)fill in all the edges(links) the connectivity has
-	this.links = buildLinks();
-	//4)call redraw()
-	this.redraw();
+	var links = buildLinks(data);
+	//4)与原有的数据做一次merge，保留位置等信息
+	//4)do merge to keep info like node's position
+	merge(nodes,links);
+	//5)重绘
+	//5)call redraw()	
+	self.redraw();
 }
 
 
@@ -215,7 +222,7 @@ this.redraw=function(){
 	}	
 
 	var _redrawEdges=function(){
-		svg.selectAll(".link").remove();//删除所有边
+		
 		
 		var linksWithArrow=self.links;
 		
@@ -238,9 +245,14 @@ this.redraw=function(){
 				 
 			})
 		}
-						
-		svg.selectAll(".link").data(linksWithArrow)
-			.enter().insert("path",":first-child")			
+		
+		
+		 
+		var path=svg.selectAll(".link").data(linksWithArrow);
+		
+		
+		// when new path arrives
+		path.enter().insert("path",":first-child")			
 			.attr("marker-end",function(d){
 				if(d.faked) return "url(#idArrow)";
 			})
@@ -259,15 +271,19 @@ this.redraw=function(){
 					return Math.max(1,boxHeight / 2 * d.ref.edge_width);//won't become invisible if too thin
 				else
 					return self.config.edge_def_width;//default value
-		})
+			})
+		
+		// when path changes
+		path
+			.attr("d", diagonal)
+		
+		// when path's removed
+		path.exit().remove();
 		
 
 		
 
 	}
-
-	var nodes=self.nodes;
-	var links=self.links;
 
 	
 	_clear();
@@ -284,9 +300,10 @@ this.redraw=function(){
     
 	///show each node with text
 	
-	var existingNodes = svg.selectAll(".node").data(nodes);//选中所有节点
+	var existingNodes = svg.selectAll(".node").data(self.nodes);//选中所有节点
     
-	//矩形    
+	//矩形
+	//draw rectangle
 	var newNodes = existingNodes.enter().append("g");	
 	
     newNodes
@@ -318,9 +335,10 @@ this.redraw=function(){
 			
 			
 			//拖动时重绘边			
-			//update node's coord ,then redraw all edges
+			//update node's coord ,then redraw affected edges
 			d.x=d.x+d3.event.dy;
 			d.y=d.y+d3.event.dx;
+			
 			_redrawEdges();
 		
 					
@@ -357,20 +375,21 @@ this.redraw=function(){
 	///text constructors
     
 	//标题
-	//Add node titles
+	//node titles
     newNodes.append("text")
     	.attr("class", "nodeTitle")
     	.attr("y", -boxHeight/2 + fontSize + 2*lineSpace)
     	.attr("text-anchor", "middle")
     
 	//副标题
-    //Add node body text 
+    //node subhead 
     newNodes.append("text")
     .attr("text-anchor", "middle")
     .attr("class", "nodeText f1Text")    
     .attr("y", -boxHeight/2 + 2*fontSize + 3*lineSpace)
     
 	//详情矩阵
+	//node body text
     newNodes.append("g")
     .attr("class", "confusionmatrix")    
         .selectAll("g").data(function(d){return d.confusionmatrix})
@@ -409,8 +428,8 @@ this.redraw=function(){
 返回根节点
 return the root node
 */
-this.getRoot=function(){
-	return this.data['0'];
+this.getRoot=function(data){
+	return data['0'];
 };
 
 /**
@@ -418,16 +437,17 @@ this.getRoot=function(){
 traverse all nodes
 callback(node)
 */
-this.traverse=function (callback){
+this.traverse=function (data,callback){
+	if(!data) console.error('data is null')
 	
-	function init(){
+	function _init(){
 		var i;
 		for(i in data){
 			data[i].visited=false;
 		} 
 	}
 	
-	function _traverse(pt,callback){
+	function _traverse(pt,callback){		
 		if(!pt){return;}
 		pt.visited=true;
 		console.debug("traverse node:"+pt.id);
@@ -445,9 +465,8 @@ this.traverse=function (callback){
 		
 	}
 	
-	var data=this.data;
-	init();
-	_traverse(this.getRoot(),callback);
+	_init();
+	_traverse(self.getRoot(data),callback);
 };
 
 /**
@@ -455,9 +474,10 @@ this.traverse=function (callback){
 traverse all edges
 callback(sourceNode,targetNode,ref)
 */
-this.traverseEdge=function (callback){
-	var data=this.data;
-	this.traverse(function(node){
+this.traverseEdge=function (data,callback){
+	if(!data) console.error('data is null')
+	
+	self.traverse(data,function(node){
 		if(node.ref){
 			node.ref.forEach(function(ref){
 				var childNode=data[ref.to.toString()];
@@ -479,7 +499,7 @@ this.traverseEdge=function (callback){
 <script>
 
 function refresh(){
-
+	//request data here
 	var data={
 	"0":{
 		id:0,
@@ -593,7 +613,7 @@ function refresh(){
 	},	
 };
 
-	
+	//customize anything here
 	myGraph.showTitle(function(d){
 		return d.name;
 	});
@@ -612,7 +632,7 @@ function refresh(){
 
 
 function refresh2(){
-
+	//request data here 
 	var data={
 	"0":{
 		id:0,
@@ -741,7 +761,5 @@ var myGraph=new graph(d3);//http://d3js.org/
 refresh();
 	
 </script>
-
-<!-- JSON.parse(JSON.stringify(d)); -->
 
 </body>
