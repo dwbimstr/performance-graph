@@ -110,24 +110,26 @@ this.bind=function(data){
 	这棵树符合cluster.nodes(tree)的调用要求（参见：https://github.com/mbostock/d3/wiki/Cluster-Layout）	
 	*/
 	var conv2tree=function(data){
-		var targetHasParent={};
-		self.traverseEdge(data,function(source,target){
-			if(!targetHasParent[target.id]){
+		var root=self.getRoot(data);
+		var hasParentFlag={};//保证每个节点只有一个父节点，以便形成树状结构
+		hasParentFlag[root.id]=true;//根节点不允许作为子节点
+		self.traverseEdge(data,function(source,target){//遍历每条边，即所有节点间关系
+			if(!hasParentFlag[target.id] && source.id!=target.id ){//首次被遍历到的target，作为source的子节点，后续将不被其它节点作为子节点
 				if(!source.children){
 					source.children=[];
 				}
 				source.children.push(target);
-				targetHasParent[target.id]=true;
+				hasParentFlag[target.id]=true;
 			}
 		});
-		return self.getRoot(data);
+		return root;
 	}
 
 
 	/**
 		通过cluster.nodes(tree)，为tree的每个节点计算x，y，depth等属性以便定位		
 	*/
-	var buildNodes=function(tree,oldData){
+	var buildNodes=function(tree){
 		return cluster.nodes(tree);
 	}
 
@@ -143,10 +145,18 @@ this.bind=function(data){
 		return result;
 	}
 
+	/**
+	更新数据时保留原有节点的位置信息
+	*/
 	var merge=function(nodes,links){
 		
-		var oldData=self.nodes;
-		if(oldData){
+		var oldData=[];
+		if(self.nodes){//原nodes存在，输出oldData
+			self.nodes.forEach(function(d){
+				oldData[d.id]=d;
+			});
+		}
+		if(oldData){//用oldData里的数据覆盖现nodes里的数据
 			nodes.forEach(function(d){
 				if(oldData[d.id]){
 					d.x=oldData[d.id].x;
@@ -164,17 +174,17 @@ this.bind=function(data){
 	//1)连通图->树 参见：https://github.com/mbostock/d3/wiki/Cluster-Layout)	
 	//1)temporarily convert a connectivity to a tree	
 	var tree = conv2tree(data);
-	//2)根据树状结构计算节点位置.若传入oldData则保留拖动后的位置信息
+	//2)根据树状结构计算节点位置.
 	//2)caculate for nodes' coords with <code>cluster.nodes(tree);</code>
 	var nodes = buildNodes(tree); 
 	//3)因为连通图是网状而非树状，将所有边补充完整
-	//3)fill in all the edges(links) the connectivity has
+	//3)fill in all the edges(links) of the connectivity
 	var links = buildLinks(data);
 	//4)与原有的数据做一次merge，保留位置等信息
 	//4)do merge to keep info like node's position
 	merge(nodes,links);
 	//5)重绘
-	//5)call redraw()	
+	//5)redraw	
 	self.redraw();
 }
 
@@ -317,6 +327,7 @@ this.redraw=function(){
 				.attr("y", -boxHeight/2)
 				.attr("width", boxWidth)
 				.attr("height", boxHeight)
+
     
 		
 		
@@ -392,7 +403,7 @@ this.redraw=function(){
 	//node body text
     newNodes.append("g")
     .attr("class", "confusionmatrix")    
-        .selectAll("g").data(function(d){return d.confusionmatrix})
+        .selectAll("g").data(function(d){return d.confusionmatrix?d.confusionmatrix:[]})
         .enter().append("g")
     	.attr("class", "rows")
     	.attr("transform", function(d,i) { return "translate("+(-15)+"," + (-boxHeight/2 + (i+3)*fontSize+(i+4)*lineSpace) + ")"; })
@@ -416,7 +427,7 @@ this.redraw=function(){
 	
     existingNodes.select(".confusionmatrix")//详情矩阵
 		.selectAll(".rows")
-		.data(function(d){return d.confusionmatrix})
+		.data(function(d){return d.confusionmatrix?d.confusionmatrix:[]})
 			.selectAll(".columns") //rows
 			.data(function(d){return d})
 			.select("text")
